@@ -244,6 +244,10 @@ function initGate(){
     document.getElementById('setupBlock').style.display = 'none';
     document.getElementById('signinBlock').style.display = 'block';
     setupTokenClient(savedClientId);
+    // Tentative de reconnexion silencieuse (sans écran de connexion) au lancement
+    setTimeout(()=>{
+      if(!accessToken){ tokenClient.requestAccessToken({prompt:''}); }
+    }, 300);
   }
 }
 document.getElementById('btnSaveClientId').onclick = ()=>{
@@ -265,13 +269,18 @@ function setupTokenClient(clientId){
     client_id: clientId,
     scope: SCOPES,
     callback: async (resp)=>{
-      if(resp.error){ toast('Connexion refusée'); return; }
+      if(resp.error){ return; } // échec silencieux : l'utilisateur reste sur l'écran "Se connecter"
       accessToken = resp.access_token;
       document.getElementById('gate').style.display = 'none';
       document.getElementById('app').style.display = 'block';
       await ensureFolder();
       renderZoneSelect();
       render();
+      if(!window._ssiRefreshTimer){
+        window._ssiRefreshTimer = setInterval(()=>{
+          tokenClient.requestAccessToken({prompt:''});
+        }, 50*60*1000);
+      }
     }
   });
 }
