@@ -244,10 +244,6 @@ function initGate(){
     document.getElementById('setupBlock').style.display = 'none';
     document.getElementById('signinBlock').style.display = 'block';
     setupTokenClient(savedClientId);
-    // Tentative de reconnexion silencieuse (sans écran de connexion) au lancement
-    setTimeout(()=>{
-      if(!accessToken){ tokenClient.requestAccessToken({prompt:''}); }
-    }, 300);
   }
 }
 document.getElementById('btnSaveClientId').onclick = ()=>{
@@ -295,6 +291,15 @@ async function gfetch(url, options={}){
     ...options,
     headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type':'application/json', ...(options.headers||{}) }
   });
+  if(res.status===401){
+    toast('Session expirée — reconnecte-toi');
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('gate').style.display = 'block';
+    document.getElementById('setupBlock').style.display = 'none';
+    document.getElementById('signinBlock').style.display = 'block';
+    accessToken = null;
+    throw new Error('401 session expirée');
+  }
   if(!res.ok){ const t = await res.text(); throw new Error(`${res.status} ${t}`); }
   return res.status===204 ? null : res.json();
 }
