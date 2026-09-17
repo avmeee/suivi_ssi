@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Suivi dérangements SSI</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root{
+    --bg:#f4f6f8; --card:#ffffff; --text:#1a1f26; --muted:#5a6472;
+    --accent:#2563eb; --accent-d:#1d4ed8; --border:#dfe3e8;
+    --ok:#16a34a; --warn:#d97706; --danger:#dc2626; --chip:#e8edf3;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#14181d; --card:#1c2128; --text:#e8ecf1; --muted:#9aa4b2;
+      --accent:#3b82f6; --accent-d:#60a5fa; --border:#30363d; --chip:#262c35; }
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding:16px; max-width:900px; margin:0 auto;}
+  h1{font-size:1.25rem; margin:8px 0 4px;}
+  .sub{color:var(--muted); font-size:0.85rem; margin-bottom:16px;}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:16px;}
+  label{display:block; font-size:0.8rem; color:var(--muted); margin-bottom:4px; margin-top:10px;}
+  select, input, textarea{width:100%; padding:9px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--bg); color:var(--text); font-size:0.95rem;}
+  textarea{resize:vertical; min-height:44px;}
+  button{cursor:pointer; border:none; border-radius:8px; padding:10px 14px; font-size:0.9rem; font-weight:600;}
+  .btn-primary{background:var(--accent); color:#fff;}
+  .btn-primary:hover{background:var(--accent-d);}
+  .btn-secondary{background:var(--chip); color:var(--text);}
+  .btn-danger{background:transparent; color:var(--danger); padding:6px 8px;}
+  .btn-ok{background:transparent; color:var(--ok); padding:6px 8px;}
+  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
+  .actions-top{display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px; flex-wrap:wrap;}
+  .zone-title{font-weight:700; font-size:0.85rem; text-transform:uppercase; letter-spacing:.03em;
+    color:var(--accent-d); border-bottom:1px solid var(--border); padding-bottom:4px; margin-bottom:8px;}
+  .entry{border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:8px; background:var(--bg);}
+  .entry.resolu{opacity:0.55;}
+  .entry-top{display:flex; justify-content:space-between; gap:8px; align-items:flex-start;}
+  .entry-main{font-size:0.92rem; line-height:1.4;}
+  .entry-meta{color:var(--muted); font-size:0.78rem; margin-top:2px;}
+  .empty{color:var(--muted); font-size:0.85rem; font-style:italic; padding:8px 0;}
+  .save-bar{display:flex; justify-content:flex-end; gap:10px; margin-top:6px; align-items:center;}
+  .modal-bg{position:fixed; inset:0; background:rgba(0,0,0,.4); display:none; align-items:flex-end; justify-content:center; z-index:50;}
+  .modal-bg.open{display:flex;}
+  .modal{background:var(--card); width:100%; max-width:520px; border-radius:16px 16px 0 0; padding:18px; max-height:88vh; overflow-y:auto;}
+  @media(min-width:600px){.modal-bg{align-items:center;} .modal{border-radius:16px;}}
+  .modal h2{margin-top:0; font-size:1.05rem;}
+  .modal-close{float:right; background:none; color:var(--muted); font-size:1.1rem; padding:2px 8px;}
+  .toast{position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:var(--text); color:var(--bg);
+    padding:10px 18px; border-radius:999px; font-size:0.85rem; opacity:0; pointer-events:none; transition:opacity .25s; z-index:100;}
+  .toast.show{opacity:1;}
+  .history-item{display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); font-size:0.9rem;}
+  .history-item a{color:var(--accent-d); text-decoration:none; font-weight:600;}
+  .tag-status{font-size:0.75rem; padding:2px 8px; border-radius:999px; border:none; font-weight:600;}
+  .tag-ouvert{background:#fef3c7; color:#92400e;}
+  .tag-resolu{background:#dcfce7; color:#166534;}
+  .small-muted{font-size:0.78rem; color:var(--muted);}
+  .gate{max-width:480px; margin:60px auto; text-align:center;}
+  .gate input{margin-bottom:10px;}
+  .gate a{color:var(--accent-d);}
+  #app{display:none;}
+</style>
+</head>
+<body>
+
+<!-- Écran de configuration / connexion (affiché tant que non connecté) -->
+<div class="gate card" id="gate">
+  <h1>🧯 Suivi dérangements SSI</h1>
+  <p class="small-muted">Application autonome — connectée directement à ton compte Google, sans passer par Claude.</p>
+
+  <div id="setupBlock">
+    <label>Client ID Google (OAuth)</label>
+    <input id="clientIdInput" placeholder="xxxxxxx.apps.googleusercontent.com">
+    <p class="small-muted">À créer une seule fois dans Google Cloud Console (voir les instructions fournies à côté de ce fichier). Il sera mémorisé dans ce navigateur.</p>
+    <button class="btn-primary" id="btnSaveClientId" style="width:100%;">Enregistrer</button>
+  </div>
+
+  <div id="signinBlock" style="display:none;">
+    <button class="btn-primary" id="btnSignIn" style="width:100%;">Se connecter avec Google</button>
+    <p class="small-muted" style="margin-top:10px;"><a href="#" id="btnChangeClientId">Changer le Client ID</a></p>
+  </div>
+</div>
+
+<div id="app">
+<h1>🧯 Suivi dérangements SSI</h1>
+<div class="sub">SDI / CMSI — relevés journaliers (application autonome)</div>
+
+<div class="actions-top">
+  <div class="row">
+    <button class="btn-primary" id="btnAdd">+ Ajouter un défaut</button>
+    <button class="btn-secondary" id="btnHistory">📁 Historique</button>
+    <button class="btn-secondary" id="btnReimport">↺ Restaurer la dernière sauvegarde</button>
+  </div>
+  <div class="small-muted" id="statusLine">—</div>
+</div>
+
+<div id="zonesContainer"></div>
+
+<div class="card save-bar">
+  <div style="flex:1" class="small-muted">Crée un nouveau Google Sheets du jour dans le dossier Drive « Suivi SSI ».</div>
+  <button class="btn-primary" id="btnSaveDay">💾 Enregistrer le jour</button>
+</div>
+</div>
+
+<!-- Modal ajout/édition -->
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <button class="modal-close" id="modalClose">✕</button>
+    <h2 id="modalTitle">Ajouter un défaut</h2>
+    <label>Zone</label>
+    <select id="fZone"></select>
+    <div id="fieldsClassic">
+      <label>N°</label><input id="fNumero" type="text" placeholder="1">
+      <label>Adresse</label><input id="fAdresse" type="text" placeholder="Z04 P05">
+      <label>Intitulé</label><input id="fIntitule" type="text" placeholder="N-1 COULOIR SUD ACCES RESERVE">
+      <label>Date</label><input id="fDate" type="date">
+      <label>Observations</label><textarea id="fObservations" placeholder="DETECTEUR A REMPLACER"></textarea>
+      <label>Action</label><textarea id="fAction" placeholder="DEVIS A VENIR"></textarea>
+    </div>
+    <div id="fieldsLogements" style="display:none;">
+      <label>Bâtiment</label>
+      <select id="fBatiment">
+        <option>BAT A</option><option>BAT B</option><option>BAT D</option>
+        <option>BAT E</option><option>BAT F</option><option>BAT H</option>
+      </select>
+      <label>Date</label><input id="fDateLog" type="date">
+      <label>Observation</label><textarea id="fObsLog" placeholder="RAS"></textarea>
+    </div>
+    <label>Statut</label>
+    <select id="fStatut"><option value="ouvert">Ouvert</option><option value="resolu">Résolu</option></select>
+    <div id="fDateResoWrap" style="display:none;">
+      <label>Date de résolution</label><input id="fDateReso" type="date">
+    </div>
+    <div class="row" style="margin-top:16px; justify-content:flex-end;">
+      <button class="btn-secondary" id="btnCancel">Annuler</button>
+      <button class="btn-primary" id="btnSaveEntry">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal historique -->
+<div class="modal-bg" id="histBg">
+  <div class="modal">
+    <button class="modal-close" id="histClose">✕</button>
+    <h2>Historique des fichiers</h2>
+    <div id="histList" class="small-muted">Chargement…</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+const ZONES = [
+  {key:'SDI1', label:'SDI 1', type:'classic'},
+  {key:'SDI2', label:'SDI 2', type:'classic'},
+  {key:'CMSI_CENTRE', label:'CMSI CENTRE', type:'classic'},
+  {key:'SDI3_PARKING', label:'SSI PARKING — SDI 3', type:'classic'},
+  {key:'CMSI_PARKING', label:'CMSI PARKING', type:'classic'},
+  {key:'SDI_BUREAUX', label:'SSI BUREAUX', type:'classic'},
+  {key:'CMSI_BUREAUX', label:'CMSI BUREAUX', type:'classic'},
+  {key:'SDI_LOGEMENTS', label:'SSI LOGEMENTS', type:'logements'}
+];
+
+let accessToken = null;
+let tokenClient = null;
+let folderId = localStorage.getItem('ssi_folder_id') || null;
+let entries = JSON.parse(localStorage.getItem('ssi_entries') || 'null');
+let lastDaySaved = JSON.parse(localStorage.getItem('ssi_last_day') || 'null');
+let editingId = null;
+
+function makeSeed(){
+  const mk = (zone, o) => ({ id: 'seed-'+zone+'-'+Math.random().toString(36).slice(2,8), zone, statut:'ouvert', dateReso:'', ...o });
+  return [
+    mk('SDI1', {numero:'1', adresse:'Z04 P05', intitule:'N-1 COULOIR SUD ACCES RESERVE', date:'2026-09-11', observations:'DETECTEUR A REMPLACER', action:'DEVIS A VENIR'}),
+    mk('SDI1', {numero:'2', adresse:'Z38 P43', intitule:'QUAI SUD COMPACTEUR', date:'2026-09-11', observations:'DETECTEUR A REMPLACER', action:'DEVIS A VENIR'}),
+    mk('SDI1', {numero:'3', adresse:'Z150 P12', intitule:'N-1 1/2 MAIL NORD', date:'2026-09-11', observations:'DETECTEUR A REMPLACER', action:'DEVIS A VENIR'}),
+    mk('SDI1', {numero:'4', adresse:'Z43 P53', intitule:'RDC 1/2 MAIL SUD OUEST', date:'2026-09-11', observations:'DETECTEUR A REMPLACER', action:'DEVIS A VENIR'}),
+    mk('SDI2', {numero:'1', adresse:'Z12 P71', intitule:'N+1 1/2 MAIL NORD EST', date:'2026-09-11', observations:'DETECTEUR A REMPLACER', action:'DEVIS A VENIR'}),
+    mk('SDI2', {numero:'2', adresse:'Z24 P91', intitule:'RDC 1/2 MAIL NORD EST', date:'2026-09-11', observations:'DETECTEUR A REMPLACER', action:'DEVIS A VENIR'}),
+    mk('SDI2', {numero:'3', adresse:'Z79 P112', intitule:'RDC ENTREE DROITE PHARMACIE', date:'2026-09-11', observations:'DETECTEUR A SUPPRIMER DE LA PROG', action:''}),
+    mk('SDI2', {numero:'4', adresse:'Z63 P68', intitule:'N+2 SAS WC', date:'2026-09-11', observations:'DETECTEUR A REMPLACER', action:'DEVIS A VENIR'}),
+    mk('SDI2', {numero:'5', adresse:'Z60 P80', intitule:'RDC LEVIS WC', date:'2026-09-11', observations:'DETECTEUR A REMPLACER', action:'DEVIS A VENIR'}),
+    mk('SDI2', {numero:'6', adresse:'Z63 P99', intitule:'N+2 ROME ANTICA SAS WC', date:'2026-09-11', observations:'DETECTEUR SOUS GARANTI', action:'A REMPLACER'}),
+    mk('CMSI_CENTRE', {numero:'1', adresse:'DFB 18', intitule:'', date:'', observations:'(AOUT) COFFRET DE RELAYAGE A CHANGER ATTENTE MATERIEL', action:''}),
+    mk('CMSI_CENTRE', {numero:'2', adresse:'DFM1', intitule:'', date:'', observations:'(AOUT) DEPANNAGE EN COURS COFFRET OPERATIONNEL MAIS PROBLEME DE REARMEMENT', action:''}),
+    mk('CMSI_CENTRE', {numero:'3', adresse:'CTA2', intitule:'', date:'', observations:'(AOUT) DEPANNAGE EN COURS', action:''}),
+    mk('CMSI_CENTRE', {numero:'4', adresse:'CTA 6', intitule:'', date:'', observations:'(AOUT) BDA A REMPLACER DEVIS EN COURS', action:''}),
+    mk('CMSI_CENTRE', {numero:'5', adresse:'DFB C&A GRANDE RESERVE', intitule:'', date:'', observations:"(AOUT) DEFAUT D'ISOLEMENT SUR LE COFFRET DE RELAYAGE C&A AVISE", action:''}),
+    mk('CMSI_CENTRE', {numero:'6', adresse:'ZF78', intitule:'', date:'', observations:'(SEPTEMBRE) TRAPPE OUVERTE TRAVAUX NIKE', action:''}),
+    mk('CMSI_CENTRE', {numero:'7', adresse:'DEFAUT BATTERIES', intitule:'', date:'', observations:'(SEPTEMBRE) BATTERIES AES BUS N+1/N+2 A REMPLACER OFFRE DE PRIX TRANSMIS', action:''}),
+    mk('SDI3_PARKING', {numero:'1', adresse:'Z16 P84', intitule:'LOCAL GROUPE FROID P5 CHARITE', date:'2026-09-11', observations:'DETECTEUR A REMPLACER', action:'DEVIS A VENIR'}),
+    mk('SDI3_PARKING', {numero:'2', adresse:'Z16 P85', intitule:'LOCAL GROUPE FROID P5 CHARITE', date:'2026-09-11', observations:'DETECTEUR A REMPLACER', action:'DEVIS A VENIR'}),
+    mk('SDI3_PARKING', {numero:'3', adresse:'Z01 P05', intitule:'PLACE 144 P1 SUD', date:'2026-09-11', observations:'DETECTEUR A REMPLACER', action:'DEVIS A VENIR'}),
+    mk('SDI3_PARKING', {numero:'4', adresse:'Z12 P47', intitule:'PLACE 474 P4 CHARITE', date:'2026-09-11', observations:'DETECTEUR A REMPLACER', action:'DEVIS A VENIR'}),
+    mk('SDI3_PARKING', {numero:'5', adresse:'Z16 P47', intitule:'PLACE 446 P5 CHARITE', date:'2026-09-11', observations:'DETECTEUR A REMPLACER', action:'DEVIS A VENIR'}),
+    mk('CMSI_PARKING', {numero:'1', adresse:'DEFAUT LIAISON', intitule:'', date:'', observations:'(SEPTEMBRE) COURT CIRCUIT LIGNE SIRENE P2 DEPANNAGE EN COURS', action:''}),
+    mk('CMSI_PARKING', {numero:'2', adresse:'DEFAUT BATTERIE', intitule:'', date:'', observations:'(SEPTEMBRE) BATTERIE AES PARKING CHARITE A REMPLACER OFFRE DE PRIX TRANSMIS', action:''}),
+    mk('SDI_BUREAUX', {numero:'1', adresse:'Z25 P15', intitule:'N+6 NCA CIRCULATION', date:'', observations:'(AOUT) DETECTEUR A REMPLACER', action:'DEVIS A VENIR'}),
+    mk('SDI_BUREAUX', {numero:'2', adresse:'Z23 P56', intitule:'N+6 BUREAU SAS', date:'', observations:'(AOUT) DETECTEUR A REMPLACER', action:'DEVIS A VENIR'}),
+    mk('SDI_LOGEMENTS', {batiment:'BAT A', date:'', observations:'RAS'}),
+    mk('SDI_LOGEMENTS', {batiment:'BAT B', date:'', observations:'RAS'}),
+    mk('SDI_LOGEMENTS', {batiment:'BAT D', date:'', observations:'RAS'}),
+    mk('SDI_LOGEMENTS', {batiment:'BAT E', date:'', observations:'RAS'}),
+    mk('SDI_LOGEMENTS', {batiment:'BAT F', date:'', observations:'DETECTEUR 5eme ETAGE A REMPLACER ATTENTE MATERIEL DEVIS A VENIR'}),
+    mk('SDI_LOGEMENTS', {batiment:'BAT H', date:'', observations:'RAS'}),
+  ];
+}
+if(!entries){ entries = makeSeed(); saveLocal_deferred = true; }
+
+function saveLocal(){
+  localStorage.setItem('ssi_entries', JSON.stringify(entries));
+}
+if(typeof saveLocal_deferred !== 'undefined'){ saveLocal(); }
+
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function todayFR(){ return new Date().toLocaleDateString('fr-FR'); }
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); }
+function zoneType(key){ const z=ZONES.find(z=>z.key===key); return z?z.type:'classic'; }
+function frDate(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-'); return d&&m&&y? `${d}/${m}/${y}` : iso; }
+
+// ---------- Config / connexion ----------
+function initGate(){
+  const savedClientId = localStorage.getItem('ssi_client_id');
+  if(savedClientId){
+    document.getElementById('setupBlock').style.display = 'none';
+    document.getElementById('signinBlock').style.display = 'block';
+    setupTokenClient(savedClientId);
+  }
+}
+document.getElementById('btnSaveClientId').onclick = ()=>{
+  const v = document.getElementById('clientIdInput').value.trim();
+  if(!v){ toast('Renseigne un Client ID'); return; }
+  localStorage.setItem('ssi_client_id', v);
+  document.getElementById('setupBlock').style.display = 'none';
+  document.getElementById('signinBlock').style.display = 'block';
+  setupTokenClient(v);
+};
+document.getElementById('btnChangeClientId').onclick = (e)=>{
+  e.preventDefault();
+  document.getElementById('setupBlock').style.display = 'block';
+  document.getElementById('signinBlock').style.display = 'none';
+};
+
+function setupTokenClient(clientId){
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: SCOPES,
+    callback: async (resp)=>{
+      if(resp.error){ toast('Connexion refusée'); return; }
+      accessToken = resp.access_token;
+      document.getElementById('gate').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      await ensureFolder();
+      renderZoneSelect();
+      render();
+    }
+  });
+}
+document.getElementById('btnSignIn').onclick = ()=>{
+  if(!tokenClient){ toast('Configure d\'abord le Client ID'); return; }
+  tokenClient.requestAccessToken();
+};
+
+// ---------- Google API helpers ----------
+async function gfetch(url, options={}){
+  const res = await fetch(url, {
+    ...options,
+    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type':'application/json', ...(options.headers||{}) }
+  });
+  if(!res.ok){ const t = await res.text(); throw new Error(`${res.status} ${t}`); }
+  return res.status===204 ? null : res.json();
+}
+
+async function ensureFolder(){
+  if(folderId) return folderId;
+  const q = encodeURIComponent("mimeType='application/vnd.google-apps.folder' and name='Suivi SSI' and trashed=false");
+  const found = await gfetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`);
+  if(found.files && found.files.length){
+    folderId = found.files[0].id;
+  } else {
+    const created = await gfetch('https://www.googleapis.com/drive/v3/files', {
+      method:'POST',
+      body: JSON.stringify({ name:'Suivi SSI', mimeType:'application/vnd.google-apps.folder' })
+    });
+    folderId = created.id;
+  }
+  localStorage.setItem('ssi_folder_id', folderId);
+  return folderId;
+}
+
+// ---------- Formulaire ----------
+function renderZoneSelect(){
+  const sel = document.getElementById('fZone');
+  sel.innerHTML = ZONES.map(z=>`<option value="${z.key}">${z.label}</option>`).join('');
+  sel.onchange = updateFieldVisibility;
+}
+function updateFieldVisibility(){
+  const type = zoneType(document.getElementById('fZone').value);
+  document.getElementById('fieldsClassic').style.display = type==='classic' ? 'block':'none';
+  document.getElementById('fieldsLogements').style.display = type==='logements' ? 'block':'none';
+}
+function openModal(entry){
+  editingId = entry ? entry.id : null;
+  document.getElementById('modalTitle').textContent = entry ? 'Modifier le défaut' : 'Ajouter un défaut';
+  document.getElementById('fZone').value = entry ? entry.zone : ZONES[0].key;
+  updateFieldVisibility();
+  document.getElementById('fNumero').value = entry?.numero || '';
+  document.getElementById('fAdresse').value = entry?.adresse || '';
+  document.getElementById('fIntitule').value = entry?.intitule || '';
+  document.getElementById('fDate').value = entry?.date || todayISO();
+  document.getElementById('fObservations').value = entry?.observations || '';
+  document.getElementById('fAction').value = entry?.action || '';
+  document.getElementById('fBatiment').value = entry?.batiment || 'BAT A';
+  document.getElementById('fDateLog').value = entry?.date || todayISO();
+  document.getElementById('fObsLog').value = entry?.observations || '';
+  document.getElementById('fStatut').value = entry?.statut || 'ouvert';
+  document.getElementById('fDateReso').value = entry?.dateReso || todayISO();
+  document.getElementById('fDateResoWrap').style.display = (entry?.statut==='resolu') ? 'block':'none';
+  document.getElementById('modalBg').classList.add('open');
+}
+function closeModal(){ document.getElementById('modalBg').classList.remove('open'); }
+document.getElementById('btnAdd').onclick = ()=>openModal(null);
+document.getElementById('modalClose').onclick = closeModal;
+document.getElementById('btnCancel').onclick = closeModal;
+document.getElementById('fStatut').onchange = (e)=>{
+  document.getElementById('fDateResoWrap').style.display = e.target.value==='resolu' ? 'block':'none';
+};
+
+document.getElementById('btnSaveEntry').onclick = ()=>{
+  const zone = document.getElementById('fZone').value;
+  const type = zoneType(zone);
+  const statut = document.getElementById('fStatut').value;
+  const id = editingId || (Date.now().toString(36)+Math.random().toString(36).slice(2,6));
+  let entry = { id, zone, statut, dateReso: statut==='resolu' ? document.getElementById('fDateReso').value : '' };
+  if(type==='classic'){
+    entry = {...entry,
+      numero: document.getElementById('fNumero').value,
+      adresse: document.getElementById('fAdresse').value,
+      intitule: document.getElementById('fIntitule').value,
+      date: document.getElementById('fDate').value,
+      observations: document.getElementById('fObservations').value,
+      action: document.getElementById('fAction').value };
+  } else {
+    entry = {...entry,
+      batiment: document.getElementById('fBatiment').value,
+      date: document.getElementById('fDateLog').value,
+      observations: document.getElementById('fObsLog').value };
+  }
+  entries = entries.filter(e=>e.id!==id);
+  entries.push(entry);
+  saveLocal();
+  closeModal(); render();
+  toast('Défaut enregistré');
+};
+function deleteEntry(id){ entries = entries.filter(e=>e.id!==id); saveLocal(); render(); toast('Défaut supprimé'); }
+function toggleResolu(id){
+  const e = entries.find(e=>e.id===id); if(!e) return;
+  if(e.statut==='resolu'){ e.statut='ouvert'; e.dateReso=''; } else { e.statut='resolu'; e.dateReso=todayISO(); }
+  saveLocal(); render();
+}
+function editEntry(id){ openModal(entries.find(e=>e.id===id)); }
+window.editEntry=editEntry; window.deleteEntry=deleteEntry; window.toggleResolu=toggleResolu;
+
+function render(){
+  const container = document.getElementById('zonesContainer');
+  container.innerHTML = '';
+  ZONES.forEach(z=>{
+    const list = entries.filter(e=>e.zone===z.key);
+    const block = document.createElement('div');
+    block.className = 'card';
+    let html = `<div class="zone-title">${z.label}</div>`;
+    if(list.length===0){ html += `<div class="empty">Aucun défaut en cours</div>`; }
+    else {
+      list.sort((a,b)=>(a.statut==='resolu')-(b.statut==='resolu'));
+      list.forEach(e=>{
+        const isLog = z.type==='logements';
+        const main = isLog
+          ? `<b>${e.batiment}</b> — ${e.observations||'RAS'}`
+          : `<b>${e.numero?('#'+e.numero+' — '):''}${e.adresse||''}</b> ${e.intitule||''}<br><span class="small-muted">${e.observations||''}${e.action?(' · '+e.action):''}</span>`;
+        html += `<div class="entry ${e.statut==='resolu'?'resolu':''}">
+          <div class="entry-top">
+            <div class="entry-main">${main}
+              <div class="entry-meta">
+                <span class="tag-status ${e.statut==='resolu'?'tag-resolu':'tag-ouvert'}">${e.statut==='resolu'?'Résolu le '+frDate(e.dateReso):'Ouvert'}</span>
+                ${e.date? ' · relevé le '+frDate(e.date):''}
+              </div>
+            </div>
+            <div class="row" style="gap:4px;">
+              <button class="btn-ok" onclick="toggleResolu('${e.id}')">${e.statut==='resolu'?'↺':'✓'}</button>
+              <button class="btn-secondary" style="padding:6px 8px;" onclick="editEntry('${e.id}')">✏️</button>
+              <button class="btn-danger" onclick="deleteEntry('${e.id}')">🗑</button>
+            </div>
+          </div></div>`;
+      });
+    }
+    block.innerHTML = html;
+    container.appendChild(block);
+  });
+  document.getElementById('statusLine').textContent = `${entries.length} défaut(s) suivi(s) · ${entries.filter(e=>e.statut!=='resolu').length} ouvert(s)`;
+}
+
+// ---------- Enregistrement du jour : création réelle d'un Google Sheets formaté ----------
+const SECTION_FILL = {red:0.80, green:0.87, blue:0.96};
+const HEADER_FILL = {red:0.85, green:0.85, blue:0.87};
+
+function buildGridRows(){
+  const rows = []; // array of {values:[...]} for Sheets API, plus track section header rows for formatting
+  const sectionRowIdx = [];
+  rows.push([`Suivi SSI du ${todayFR()}`]);
+  rows.push([]);
+  ZONES.forEach(z=>{
+    sectionRowIdx.push(rows.length);
+    rows.push([z.label]);
+    if(z.type==='classic'){
+      rows.push(['N°','Adresse','Intitulé','Date','Observations','Action','Date résolution','Statut']);
+      const list = entries.filter(e=>e.zone===z.key);
+      if(list.length===0) rows.push(['—','','','','','','','']);
+      list.forEach(e=>rows.push([e.numero||'', e.adresse||'', e.intitule||'', frDate(e.date), e.observations||'', e.action||'', frDate(e.dateReso), e.statut==='resolu'?'Résolu':'Ouvert']));
+    } else {
+      rows.push(['Bâtiment','Date','Observation','Date résolution','Statut']);
+      const list = entries.filter(e=>e.zone===z.key);
+      if(list.length===0) rows.push(['—','','','','']);
+      list.forEach(e=>rows.push([e.batiment||'', frDate(e.date), e.observations||'', frDate(e.dateReso), e.statut==='resolu'?'Résolu':'Ouvert']));
+    }
+    rows.push([]);
+  });
+  return {rows, sectionRowIdx};
+}
+
+async function createDaySpreadsheet(){
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const yy = String(d.getFullYear()).slice(-2);
+  const title = `SUIVI_SSI_${dd}${mm}${yy}_${Date.now().toString(36).slice(-4)}`;
+  const {rows, sectionRowIdx} = buildGridRows();
+
+  // 1. Créer le fichier Sheets directement dans le bon dossier
+  const created = await gfetch('https://www.googleapis.com/drive/v3/files', {
+    method:'POST',
+    body: JSON.stringify({ name:title, mimeType:'application/vnd.google-apps.spreadsheet', parents:[folderId] })
+  });
+  const spreadsheetId = created.id;
+
+  // 2. Écrire les valeurs
+  await gfetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/A1?valueInputOption=USER_ENTERED`, {
+    method:'PUT',
+    body: JSON.stringify({ range:'A1', values: rows.map(r=>r.length?r:['']) })
+  });
+
+  // 3. Mise en forme (titres de section en gras avec fond bleu clair, en-têtes en gras)
+  const requests = [];
+  sectionRowIdx.forEach(r=>{
+    requests.push({
+      repeatCell:{
+        range:{sheetId:0, startRowIndex:r, endRowIndex:r+1, startColumnIndex:0, endColumnIndex:8},
+        cell:{userEnteredFormat:{backgroundColor:SECTION_FILL, textFormat:{bold:true, fontSize:11}}},
+        fields:'userEnteredFormat(backgroundColor,textFormat)'
+      }
+    });
+    requests.push({
+      repeatCell:{
+        range:{sheetId:0, startRowIndex:r+1, endRowIndex:r+2, startColumnIndex:0, endColumnIndex:8},
+        cell:{userEnteredFormat:{backgroundColor:HEADER_FILL, textFormat:{bold:true}}},
+        fields:'userEnteredFormat(backgroundColor,textFormat)'
+      }
+    });
+  });
+  requests.push({ updateSheetProperties:{ properties:{sheetId:0, gridProperties:{frozenRowCount:0}}, fields:'gridProperties.frozenRowCount' } });
+  if(requests.length){
+    await gfetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+      method:'POST', body: JSON.stringify({requests})
+    });
+  }
+
+  return {id: spreadsheetId, title};
+}
+
+document.getElementById('btnSaveDay').onclick = async ()=>{
+  const btn = document.getElementById('btnSaveDay');
+  btn.disabled = true; btn.textContent = 'Enregistrement…';
+  try{
+    const {id, title} = await createDaySpreadsheet();
+    lastDaySaved = { entries: JSON.parse(JSON.stringify(entries)), title, id, savedAt: Date.now() };
+    localStorage.setItem('ssi_last_day', JSON.stringify(lastDaySaved));
+    toast('Fichier du jour créé dans Drive ✅');
+  }catch(err){
+    console.error(err);
+    toast('Échec de la création du fichier');
+  }
+  btn.disabled = false; btn.textContent = '💾 Enregistrer le jour';
+};
+
+document.getElementById('btnReimport').onclick = ()=>{
+  if(!lastDaySaved){ toast('Aucune sauvegarde de jour précédent trouvée'); return; }
+  if(!confirm(`Remplacer les défauts actuels par ceux de la dernière sauvegarde (${lastDaySaved.title}) ?`)) return;
+  entries = JSON.parse(JSON.stringify(lastDaySaved.entries));
+  saveLocal(); render();
+  toast('Dernière sauvegarde restaurée');
+};
+
+// ---------- Historique ----------
+document.getElementById('btnHistory').onclick = async ()=>{
+  document.getElementById('histBg').classList.add('open');
+  const el = document.getElementById('histList');
+  el.textContent = 'Chargement…';
+  try{
+    const q = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
+    const res = await gfetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=createdTime desc&fields=files(id,name,webViewLink)&pageSize=50`);
+    const files = res.files || [];
+    if(files.length===0){ el.innerHTML = '<div class="empty">Aucun fichier pour le moment.</div>'; return; }
+    el.innerHTML = files.map(f=>`<div class="history-item"><span>${f.name}</span><a href="${f.webViewLink||('https://docs.google.com/spreadsheets/d/'+f.id)}" target="_blank" rel="noopener">Ouvrir ↗</a></div>`).join('');
+  }catch(err){ console.error(err); el.textContent = "Impossible de charger l'historique."; }
+};
+document.getElementById('histClose').onclick = ()=>document.getElementById('histBg').classList.remove('open');
+
+// ---------- Init ----------
+initGate();
+</script>
+</body>
+</html>
